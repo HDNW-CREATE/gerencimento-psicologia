@@ -130,7 +130,31 @@ Todas estão documentadas em [`.env.example`](.env.example). Resumo:
 
 ---
 
-## 5. Segurança e LGPD – o que está implementado
+## 5. Aurora – assistente de chat
+
+No canto inferior esquerdo de **todas as telas logadas** há a **Aurora**, uma assistente de chat. Cada perfil tem as suas respostas:
+
+| Perfil                     | Exemplos do que a Aurora faz                                                                                                                                                                 |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Psicóloga / secretaria** | "Quem eu vou atender hoje?", "e amanhã?", "esta semana", "próxima sessão", "pagamentos pendentes", "pedidos aguardando aprovação", "resumo do mês", "buscar Maria", **"cadastrar paciente"** |
+| **Paciente**               | "Minha próxima sessão", "horários disponíveis", "preciso remarcar" (explica o prazo), "pagamentos pendentes", "recibo", "valores", "endereço e contato"                                      |
+
+**Cadastro por conversa:** a psicóloga diz _"cadastrar paciente Maria Souza, telefone (11) 98888-7777, e-mail maria@exemplo.com, nascimento 12/03/1990"_ (ou só _"cadastrar paciente"_ e a Aurora pergunta passo a passo). A Aurora mostra um resumo, avisa se já existe cadastro parecido, pede os dados do responsável se for menor de idade e **só grava depois da confirmação**. O cadastro usa as mesmas validações e a mesma auditoria do formulário.
+
+Como funciona (decisões de segurança):
+
+- **Roda 100% no seu servidor**: sem IA externa, sem chave de API e sem custo. Os dados dos pacientes não saem do sistema (LGPD).
+- O perfil vem sempre da **sessão do servidor**; o paciente só enxerga os **próprios** dados e nunca consegue cadastrar ninguém (testado, inclusive com tentativa de forjar a conversa).
+- **Nunca mostra conteúdo de prontuário** no chat.
+- O texto das conversas **não é gravado** em log nem no banco; só ações reais (ex.: o cadastro) geram auditoria.
+- Mensagens do paciente com sinais de risco (ex.: pensamentos de se machucar) recebem **acolhimento e os telefones de ajuda imediata (CVV 188, SAMU 192)**, com prioridade sobre qualquer outra resposta.
+- Limite de 60 mensagens por minuto por usuário.
+
+Para mudar o nome, edite `ASSISTANT_NAME` em `src/lib/assistant/types.ts`. As frases entendidas ficam em `src/lib/assistant/nlu.ts` e as respostas em `src/server/assistant/`.
+
+---
+
+## 6. Segurança e LGPD – o que está implementado
 
 - **Permissões no servidor** em toda ação e rota (matriz única em `src/lib/permissions.ts`); o middleware é só a primeira barreira.
 - **Paciente só vê o que é dele:** toda consulta filtra pelo paciente da _sessão_ (nunca por ID da URL). Documentos e recibos devolvem 404 idêntico para "não existe" e "não é seu".
@@ -144,7 +168,7 @@ Todas estão documentadas em [`.env.example`](.env.example). Resumo:
 
 ---
 
-## 6. Estrutura
+## 7. Estrutura
 
 ```
 prisma/            schema, migrations (inclui travas de integridade) e seed
@@ -161,7 +185,7 @@ Decisões técnicas e o diagrama ER: [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 ---
 
-## 7. Limitações conhecidas (honestidade)
+## 8. Limitações conhecidas (honestidade)
 
 - **Pagamento online (Pix)** não está ligado: o controle é manual. A estrutura (campos no banco e interface `PaymentProvider`) está pronta para Mercado Pago/Asaas.
 - O calendário da agenda usa o **fuso do navegador** (esperado: America/Sao_Paulo). O servidor sempre usa America/Sao_Paulo.

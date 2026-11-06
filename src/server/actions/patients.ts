@@ -5,17 +5,9 @@ import { z } from 'zod';
 import { audit } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { patientSchema, quickPatientSchema } from '@/lib/schemas/patient';
-import { parseMoneyToCents } from '@/lib/validators';
 import { ok, run, UserError, type ActionResult } from '../action-result';
+import { createPatientRecord, mapUnique, toPatientData as toData } from '../patients';
 import { requirePermissionOrThrow } from '../session';
-
-/** Erros de unicidade (CPF) viram mensagem amigável. */
-function mapUnique(err: unknown): never {
-  if ((err as { code?: string }).code === 'P2002') {
-    throw new UserError('Já existe um paciente com este CPF.', { cpf: ['CPF já cadastrado.'] });
-  }
-  throw err;
-}
 
 export async function quickCreatePatientAction(
   input: unknown,
@@ -37,34 +29,10 @@ export async function quickCreatePatientAction(
   });
 }
 
-function toData(d: z.output<typeof patientSchema>) {
-  let customPriceCents: number | null = null;
-  if (d.customPrice) {
-    const c = parseMoneyToCents(d.customPrice);
-    if (c === null)
-      throw new UserError('Valor personalizado inválido.', { customPrice: ['Valor inválido.'] });
-    customPriceCents = c;
-  }
-  const { customPrice: _ignored, birthDate, ...rest } = d;
-  return {
-    ...rest,
-    birthDate: birthDate ? new Date(`${birthDate}T00:00:00Z`) : null,
-    customPriceCents,
-  };
-}
-
 export async function createPatientAction(input: unknown): Promise<ActionResult<{ id: string }>> {
   return run(async () => {
     const actor = await requirePermissionOrThrow('patients.write');
-    const d = toData(patientSchema.parse(input));
-    const p = await db.patientProfile.create({ data: d }).catch(mapUnique);
-    await audit({
-      action: 'PATIENT_CREATE',
-      actorId: actor.id,
-      actorRole: actor.role,
-      entity: 'PatientProfile',
-      entityId: p.id,
-    });
+    const p = await createPatientRecord(actor, input, 'form');
     revalidatePath('/admin', 'layout');
     return ok('Paciente cadastrado.', { id: p.id });
   });

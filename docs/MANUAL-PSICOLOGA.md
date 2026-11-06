@@ -59,6 +59,29 @@ Na ficha do paciente, clique em **Prontuário**.
 - **Modelos de e-mail:** edite os textos automáticos (boas-vindas, confirmação, lembretes, cancelamento…).
 - O sistema envia sozinho: confirmação de e-mail, agendamento recebido/confirmado/recusado, remarcação, cancelamento e **lembretes 24h e 2h antes** (com o link da sessão online).
 
+## Aurora – sua assistente de chat
+
+No **canto inferior esquerdo** da tela há o botão **Aurora**. Clique e converse como se fosse uma mensagem de WhatsApp. Você também pode tocar nos botões de sugestão.
+
+**Pergunte, por exemplo:**
+
+- "Quem eu vou atender hoje?" · "E amanhã?" · "Esta semana" · "Qual a próxima sessão?"
+- "Tem pedido de agendamento aguardando?"
+- "Pagamentos pendentes" · "Resumo do mês"
+- "Buscar Maria" (mostra contato, próxima sessão e valor pendente)
+
+**Cadastrar paciente pelo chat:**
+
+1. Escreva _"cadastrar paciente"_ (ou já com os dados: _"cadastrar paciente Ana Lima, telefone (11) 98888-7777, e-mail ana@exemplo.com, nascimento 12/03/1990"_).
+2. A Aurora pergunta o que faltar. Em telefone, e-mail e nascimento você pode responder **pular**. Só o nome é obrigatório.
+3. Se o paciente for menor de idade, ela pede o nome e o telefone do responsável.
+4. Ela mostra um resumo. Responda **Confirmar** para salvar, **Corrigir** para refazer ou **Cancelar** (nada é salvo).
+5. Se já existir alguém parecido, ela avisa antes de duplicar.
+
+O paciente cadastrado aparece na hora em **Pacientes**. A Aurora **não mostra prontuário**; para isso abra a ficha do paciente.
+
+> Os pacientes também têm uma Aurora, com respostas próprias (próxima sessão, horários, pagamentos, contato). Se um paciente escrever algo que indique risco, ela responde com acolhimento e os telefones **CVV 188** e **SAMU 192**.
+
 ## Privacidade (LGPD)
 
 Em **LGPD** aparecem os pedidos dos pacientes:

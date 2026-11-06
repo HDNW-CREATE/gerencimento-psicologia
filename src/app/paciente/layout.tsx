@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AssistantWidget } from '@/components/assistant/assistant-widget';
 import { redirect } from 'next/navigation';
 import { getPendingConsents } from '@/server/consents';
 import { BottomNav, SideNav, type NavItem } from '@/components/nav-links';
@@ -43,6 +44,7 @@ export default async function PatientLayout({ children }: { children: React.Reac
         {!user.emailVerifiedAt && <VerifyBanner email={user.email} />}
         {children}
       </main>
+      <AssistantWidget role="patient" firstName={user.name.split(' ')[0] ?? ''} />
       <BottomNav items={mobileItems} />
     </div>
   );

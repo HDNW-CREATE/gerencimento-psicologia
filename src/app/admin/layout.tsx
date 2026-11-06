@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BottomNav, SideNav, type NavItem } from '@/components/nav-links';
+import { AssistantWidget } from '@/components/assistant/assistant-widget';
 import { LogoutButton } from '@/components/user-menu';
 import { can } from '@/lib/permissions';
 import { getClinic } from '@/lib/settings';
@@ -65,6 +66,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {children}
         </main>
       </div>
+      <AssistantWidget role="staff" firstName={user.name.split(' ')[0] ?? ''} />
       <BottomNav items={mobile} />
     </div>
   );
