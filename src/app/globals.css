@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Paleta acolhedora: verde-sálvia + areia. Contrastes ≥ 4.5:1 para texto. */
+    --background: 40 33% 97%;
+    --foreground: 160 18% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 160 18% 16%;
+    --primary: 156 24% 33%;
+    --primary-foreground: 40 33% 98%;
+    --secondary: 38 28% 91%;
+    --secondary-foreground: 160 18% 20%;
+    --muted: 38 25% 93%;
+    --muted-foreground: 160 8% 38%;
+    --accent: 150 22% 90%;
+    --accent-foreground: 156 28% 22%;
+    --destructive: 0 62% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 148 55% 28%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 40%;
+    --warning-foreground: 0 0% 100%;
+    --sand: 36 30% 88%;
+    --border: 38 20% 85%;
+    --input: 38 20% 80%;
+    --ring: 156 30% 38%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-serif tracking-tight;
+  }
+
+  /* Foco visível para navegação por teclado */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .prose-soft p {
+    @apply mb-4 leading-relaxed text-foreground/90;
+  }
+  .prose-soft h2 {
+    @apply mb-2 mt-8 text-xl font-semibold;
+  }
+  .rich-content p {
+    @apply mb-3;
+  }
+  .rich-content ul {
+    @apply mb-3 list-disc pl-6;
+  }
+  .rich-content ol {
+    @apply mb-3 list-decimal pl-6;
+  }
+  .rich-content h2 {
+    @apply mb-2 mt-4 text-lg font-semibold;
+  }
+  .rich-content blockquote {
+    @apply my-3 border-l-4 border-border pl-4 italic text-muted-foreground;
+  }
+}
+
+/* FullCalendar – harmonizar com a paleta */
+.fc {
+  --fc-border-color: hsl(var(--border));
+  --fc-button-bg-color: hsl(var(--primary));
+  --fc-button-border-color: hsl(var(--primary));
+  --fc-button-hover-bg-color: hsl(156 26% 26%);
+  --fc-button-hover-border-color: hsl(156 26% 26%);
+  --fc-button-active-bg-color: hsl(156 26% 22%);
+  --fc-button-active-border-color: hsl(156 26% 22%);
+  --fc-today-bg-color: hsl(var(--accent) / 0.6);
+  --fc-page-bg-color: transparent;
+  font-size: 0.875rem;
+}
+.fc .fc-toolbar-title {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.15rem;
+  text-transform: capitalize;
+}
+.fc .fc-toolbar {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.fc .fc-event {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 1px 3px;
+}

@@ -1,0 +1,581 @@
+// Schema do sistema de gestão do consultório.
+// Datas: todas `timestamptz` (UTC). Valores monetários: centavos (Int).
+// Observação: a EXCLUDE constraint anti-conflito de horário está na migration
+// `*_appointment_overlap_guard` (Prisma não modela constraints de exclusão).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum Role {
+  ADMIN
+  SECRETARIA // reservado: agenda e financeiro, SEM prontuário
+  PACIENTE
+}
+
+enum PatientStatus {
+  ATIVO
+  INATIVO
+  ALTA
+}
+
+enum Modality {
+  PRESENCIAL
+  ONLINE
+}
+
+enum AppointmentStatus {
+  PENDENTE // aguardando confirmação da psicóloga (aprovação manual)
+  AGENDADA
+  CONFIRMADA
+  REALIZADA
+  FALTA
+  CANCELADA_PACIENTE
+  CANCELADA_PSICOLOGA
+  RECUSADA
+}
+
+enum PaymentStatus {
+  PENDENTE
+  PAGO
+  ISENTO
+}
+
+enum PaymentMethod {
+  PIX
+  DINHEIRO
+  CARTAO
+  TRANSFERENCIA
+}
+
+enum RecurrenceFrequency {
+  SEMANAL
+  QUINZENAL
+}
+
+enum DataRequestType {
+  EXPORTACAO
+  EXCLUSAO
+}
+
+enum DataRequestStatus {
+  ABERTA
+  EM_ANALISE
+  CONCLUIDA
+  NEGADA
+}
+
+enum NotificationStatus {
+  PENDENTE
+  ENVIADO
+  FALHA
+}
+
+enum ConsentType {
+  TERMO_CONSENTIMENTO
+  POLITICA_PRIVACIDADE
+  TERMOS_DE_USO
+}
+
+enum DocumentKind {
+  ATESTADO
+  DECLARACAO
+  RECIBO
+  OUTRO
+}
+
+// ───────────────────────── Usuários e acesso ─────────────────────────
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique // sempre minúsculo
+  passwordHash    String
+  name            String
+  role            Role      @default(PACIENTE)
+  emailVerifiedAt DateTime? @db.Timestamptz(3)
+
+  // Invalida todos os JWT emitidos antes ("sair de todos os dispositivos")
+  sessionVersion Int @default(0)
+
+  // Proteção contra força bruta (além do RateLimit por IP)
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime? @db.Timestamptz(3)
+  lastLoginAt      DateTime? @db.Timestamptz(3)
+
+  // Preferências de notificação
+  notifyReminders  Boolean @default(true)
+  notifyPayments   Boolean @default(true)
+  notifyAnnouncements Boolean @default(true)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  patientProfile         PatientProfile?
+  consents               ConsentAcceptance[]
+  passwordResetTokens    PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  dataRequests           DataRequest[]
+
+  @@index([role])
+  @@index([deletedAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique // sha256 do token enviado por e-mail
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model RateLimit {
+  key       String   @id // ex.: "login:ip:1.2.3.4"
+  count     Int      @default(0)
+  resetAt   DateTime @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([resetAt])
+}
+
+// ───────────────────────── Pacientes ─────────────────────────
+
+model PatientProfile {
+  id     String  @id @default(cuid())
+  userId String? @unique // nulo = paciente cadastrado pela psicóloga, sem conta
+
+  fullName   String
+  socialName String?
+  email      String? // e-mail de contato (usado para vincular conta futura)
+  phone      String?
+  birthDate  DateTime? @db.Date
+  cpf        String?   @unique // somente dígitos
+  status     PatientStatus @default(ATIVO)
+
+  // Responsável legal (menores de idade)
+  guardianName     String?
+  guardianCpf      String?
+  guardianPhone    String?
+  guardianEmail    String?
+  guardianRelation String?
+
+  // Contato de emergência
+  emergencyName     String?
+  emergencyPhone    String?
+  emergencyRelation String?
+
+  // Terapia de casal: dados do(a) parceiro(a)
+  partnerName  String?
+  partnerPhone String?
+  partnerEmail String?
+
+  // Observações ADMINISTRATIVAS (não é prontuário!)
+  adminNotes String?
+  tags       String[] @default([])
+
+  // Valor personalizado por sessão (centavos); nulo = usa o do serviço
+  customPriceCents Int?
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  user           User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  appointments   Appointment[]
+  payments       Payment[]
+  packages       SessionPackage[]
+  documents      Document[]
+  clinicalRecords ClinicalRecord[]
+  anamnesis      Anamnesis?
+  recurrences    RecurrenceRule[]
+
+  @@index([status])
+  @@index([fullName])
+  @@index([email])
+  @@index([deletedAt])
+}
+
+// ───────────────────────── Serviços e disponibilidade ─────────────────────────
+
+model ServiceType {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  durationMinutes Int      @default(50)
+  priceCents      Int      @default(0)
+  allowsOnline    Boolean  @default(true)
+  allowsInPerson  Boolean  @default(true)
+  isCouple        Boolean  @default(false)
+  showPrice       Boolean  @default(true) // exibir valor no site público
+  showOnSite      Boolean  @default(true)
+  active          Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  deletedAt       DateTime? @db.Timestamptz(3)
+
+  appointments Appointment[]
+  recurrences  RecurrenceRule[]
+}
+
+model AvailabilityRule {
+  id          String    @id @default(cuid())
+  weekday     Int // 0 = domingo … 6 = sábado
+  startMinute Int // minutos desde 00:00 (horário local)
+  endMinute   Int
+  modality    Modality? // nulo = presencial e online
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([weekday])
+}
+
+model AvailabilityBlock {
+  id        String   @id @default(cuid())
+  startsAt  DateTime @db.Timestamptz(3)
+  endsAt    DateTime @db.Timestamptz(3)
+  reason    String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([startsAt, endsAt])
+}
+
+// ───────────────────────── Agenda ─────────────────────────
+
+model RecurrenceRule {
+  id              String              @id @default(cuid())
+  patientId       String
+  serviceTypeId   String
+  frequency       RecurrenceFrequency
+  weekday         Int // 0-6 (local)
+  startMinute     Int // minutos desde 00:00 (local)
+  durationMinutes Int
+  modality        Modality
+  meetingUrl      String?
+  startDate       DateTime            @db.Date
+  until           DateTime?           @db.Date // fim da série
+  active          Boolean             @default(true)
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+
+  patient      PatientProfile @relation(fields: [patientId], references: [id])
+  serviceType  ServiceType    @relation(fields: [serviceTypeId], references: [id])
+  appointments Appointment[]
+
+  @@index([patientId])
+}
+
+model Appointment {
+  id            String            @id @default(cuid())
+  patientId     String
+  serviceTypeId String
+  startsAt      DateTime          @db.Timestamptz(3)
+  endsAt        DateTime          @db.Timestamptz(3)
+  modality      Modality
+  status        AppointmentStatus @default(AGENDADA)
+  meetingUrl    String?
+  locationNote  String?
+  priceCents    Int               @default(0) // valor "congelado" no momento do agendamento
+
+  recurrenceId String?
+  packageId    String?
+
+  adminNote     String? // nota administrativa (não clínica)
+  createdByRole Role      @default(PACIENTE)
+  createdById   String?
+  confirmedAt   DateTime? @db.Timestamptz(3)
+  cancelledAt   DateTime? @db.Timestamptz(3)
+  cancelReason  String?
+
+  reminder24SentAt DateTime? @db.Timestamptz(3)
+  reminder2SentAt  DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  patient       PatientProfile   @relation(fields: [patientId], references: [id])
+  serviceType   ServiceType      @relation(fields: [serviceTypeId], references: [id])
+  recurrence    RecurrenceRule?  @relation(fields: [recurrenceId], references: [id])
+  package       SessionPackage?  @relation(fields: [packageId], references: [id])
+  payment       Payment?
+  clinicalRecord ClinicalRecord?
+  notifications NotificationLog[]
+
+  @@index([startsAt])
+  @@index([patientId, startsAt])
+  @@index([status, startsAt])
+  @@index([recurrenceId])
+}
+
+// ───────────────────────── Prontuário (criptografado) ─────────────────────────
+
+model ClinicalRecord {
+  id            String   @id @default(cuid())
+  patientId     String
+  appointmentId String?  @unique
+  authorId      String // User.id da ADMIN
+  contentEnc    String // AES-256-GCM: "v1:iv:tag:ciphertext" (base64)
+  currentVersion Int     @default(1)
+  retractedAt   DateTime? @db.Timestamptz(3) // "invalidado" – nunca apagado
+  retractedReason String?
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  patient     PatientProfile @relation(fields: [patientId], references: [id])
+  appointment Appointment?   @relation(fields: [appointmentId], references: [id])
+  versions    ClinicalRecordVersion[]
+
+  @@index([patientId, createdAt])
+}
+
+model ClinicalRecordVersion {
+  id         String   @id @default(cuid())
+  recordId   String
+  version    Int
+  contentEnc String
+  editedById String
+  reason     String? // motivo da retificação
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  record ClinicalRecord @relation(fields: [recordId], references: [id])
+
+  @@unique([recordId, version])
+}
+
+model Anamnesis {
+  id             String   @id @default(cuid())
+  patientId      String   @unique
+  dataEnc        String // JSON { campo: valor } criptografado
+  currentVersion Int      @default(1)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  patient  PatientProfile    @relation(fields: [patientId], references: [id])
+  versions AnamnesisVersion[]
+}
+
+model AnamnesisVersion {
+  id          String   @id @default(cuid())
+  anamnesisId String
+  version     Int
+  dataEnc     String
+  editedById  String
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  anamnesis Anamnesis @relation(fields: [anamnesisId], references: [id])
+
+  @@unique([anamnesisId, version])
+}
+
+// ───────────────────────── Financeiro ─────────────────────────
+
+model SessionPackage {
+  id            String    @id @default(cuid())
+  patientId     String
+  name          String
+  totalSessions Int
+  priceCents    Int
+  purchasedAt   DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt     DateTime? @db.Timestamptz(3)
+  cancelledAt   DateTime? @db.Timestamptz(3)
+  notes         String?
+
+  patient      PatientProfile @relation(fields: [patientId], references: [id])
+  appointments Appointment[]
+  payments     Payment[]
+
+  @@index([patientId])
+}
+
+model Payment {
+  id            String         @id @default(cuid())
+  patientId     String
+  appointmentId String?        @unique
+  packageId     String?
+  amountCents   Int
+  status        PaymentStatus  @default(PENDENTE)
+  method        PaymentMethod?
+  paidAt        DateTime?      @db.Timestamptz(3)
+  dueDate       DateTime?      @db.Date
+  notes         String?
+  receiptNumber Int            @unique @default(autoincrement())
+
+  // Preparação para pagamento online (Pix) – não usado no controle manual
+  provider     String?
+  externalId   String?
+  pixCopyPaste String?
+  pixExpiresAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  patient     PatientProfile  @relation(fields: [patientId], references: [id])
+  appointment Appointment?    @relation(fields: [appointmentId], references: [id])
+  package     SessionPackage? @relation(fields: [packageId], references: [id])
+
+  @@index([patientId, status])
+  @@index([status, dueDate])
+  @@index([paidAt])
+}
+
+// ───────────────────────── Documentos ─────────────────────────
+
+model Document {
+  id                String       @id @default(cuid())
+  patientId         String
+  uploadedById      String
+  kind              DocumentKind @default(OUTRO)
+  title             String
+  storageKey        String
+  mimeType          String
+  sizeBytes         Int
+  sharedWithPatient Boolean      @default(false)
+  createdAt         DateTime     @default(now()) @db.Timestamptz(3)
+  deletedAt         DateTime?    @db.Timestamptz(3)
+
+  patient PatientProfile @relation(fields: [patientId], references: [id])
+
+  @@index([patientId])
+}
+
+// ───────────────────────── Comunicação ─────────────────────────
+
+model EmailTemplate {
+  key       String   @id // ex.: "appointment_confirmed"
+  name      String
+  subject   String
+  body      String // texto com {{variaveis}}; parágrafos separados por linha em branco
+  active    Boolean  @default(true)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+model NotificationLog {
+  id            String             @id @default(cuid())
+  dedupeKey     String?            @unique // impede envio duplicado (ex.: "reminder24:<apptId>")
+  template      String
+  toEmail       String
+  subject       String
+  status        NotificationStatus @default(PENDENTE)
+  error         String? // mensagem curta e sanitizada
+  providerId    String?
+  userId        String?
+  appointmentId String?
+  createdAt     DateTime           @default(now()) @db.Timestamptz(3)
+
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+
+  @@index([createdAt])
+  @@index([appointmentId])
+}
+
+// ───────────────────────── LGPD e auditoria ─────────────────────────
+
+model LegalDocument {
+  id          String      @id @default(cuid())
+  type        ConsentType
+  version     Int
+  title       String
+  content     String // texto (parágrafos separados por linha em branco; títulos com "## ")
+  publishedAt DateTime    @default(now()) @db.Timestamptz(3)
+
+  acceptances ConsentAcceptance[]
+
+  @@unique([type, version])
+}
+
+model ConsentAcceptance {
+  id              String   @id @default(cuid())
+  userId          String
+  legalDocumentId String
+  acceptedAt      DateTime @default(now()) @db.Timestamptz(3)
+  ip              String?
+  userAgent       String?
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  legalDocument LegalDocument @relation(fields: [legalDocumentId], references: [id])
+
+  @@index([userId])
+}
+
+model DataRequest {
+  id             String            @id @default(cuid())
+  userId         String
+  type           DataRequestType
+  status         DataRequestStatus @default(ABERTA)
+  message        String?
+  resolutionNote String?
+  resolvedById   String?
+  createdAt      DateTime          @default(now()) @db.Timestamptz(3)
+  resolvedAt     DateTime?         @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorRole Role?
+  action    String // ex.: "LOGIN_SUCCESS", "CLINICAL_RECORD_READ"
+  entity    String?
+  entityId  String?
+  ip        String?
+  userAgent String?
+  metadata  Json? // NUNCA conteúdo clínico, senhas ou tokens
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([entity, entityId])
+}
+
+// ───────────────────────── Conteúdo e configurações ─────────────────────────
+
+model Setting {
+  key       String   @id // ex.: "clinic", "scheduling"
+  value     Json
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+model SiteContent {
+  key       String   @id // ex.: "home", "about", "contact"
+  value     Json
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String
+  sortOrder Int      @default(0)
+  published Boolean  @default(true)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+}

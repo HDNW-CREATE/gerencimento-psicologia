@@ -1,0 +1,27 @@
+name: Lembretes automáticos
+
+# Chama o endpoint de lembretes a cada 15 minutos.
+# (O cron nativo da Vercel no plano gratuito só roda 1x por dia, por isso usamos o GitHub Actions.)
+# Configure em: Settings → Secrets and variables → Actions
+#   APP_URL     = https://seudominio.com.br   (sem barra no final)
+#   CRON_SECRET = o mesmo valor da variável CRON_SECRET na Vercel
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar lembretes
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -e
+          status=$(curl -sS -o response.json -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${APP_URL}/api/cron/reminders")
+          cat response.json; echo
+          test "$status" = "200"

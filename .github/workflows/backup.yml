@@ -1,0 +1,54 @@
+name: Backup do banco de dados
+
+# Backup diário do PostgreSQL (pg_dump), criptografado e enviado para um bucket S3 compatível (R2/Supabase/S3).
+# Configure em: Settings → Secrets and variables → Actions
+#   BACKUP_DATABASE_URL  = string de conexão DIRETA do banco (somente leitura, se possível)
+#   BACKUP_PASSPHRASE    = frase longa usada para criptografar o arquivo (GUARDE-A em local seguro!)
+#   S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY   = bucket PRIVADO de backups
+# Restauração: veja docs/BACKUP.md
+on:
+  schedule:
+    - cron: '30 6 * * *' # 03:30 no horário de Brasília
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar cliente PostgreSQL 17
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /etc/apt/trusted.gpg.d/pgdg.asc >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+
+      - name: Gerar dump criptografado
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          FILE="consultorio-$(date -u +%Y%m%d-%H%M).dump.gpg"
+          pg_dump --format=custom --no-owner --no-privileges "$BACKUP_DATABASE_URL" \
+            | gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" --symmetric --cipher-algo AES256 -o "$FILE"
+          ls -lh "$FILE"
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+
+      - name: Enviar para o bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp "$FILE" "s3://${{ secrets.S3_BUCKET }}/backups/$FILE" --endpoint-url "${{ secrets.S3_ENDPOINT }}"
+
+      - name: Apagar backups com mais de 30 dias
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          CUTOFF=$(date -u -d '30 days ago' +%Y%m%d)
+          aws s3 ls "s3://${{ secrets.S3_BUCKET }}/backups/" --endpoint-url "${{ secrets.S3_ENDPOINT }}" | awk '{print $4}' | while read -r f; do
+            d=$(echo "$f" | sed -n 's/^consultorio-\([0-9]\{8\}\)-.*/\1/p')
+            if [ -n "$d" ] && [ "$d" -lt "$CUTOFF" ]; then aws s3 rm "s3://${{ secrets.S3_BUCKET }}/backups/$f" --endpoint-url "${{ secrets.S3_ENDPOINT }}"; fi
+          done
